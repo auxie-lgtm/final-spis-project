@@ -15,7 +15,7 @@ class PromptManager:
 
     # The model used for text generationis TinyLlama. 
 
-    MODEL = "TinyLlama/tinyllama-1.1B-Chat-v1.0"
+    __MODEL = "TinyLlama/tinyllama-1.1B-Chat-v1.0"
 
     # Device management done with torch. 
     # Tries to use bfloat16 if CUDA is available, otherwise uses float32.
@@ -26,11 +26,11 @@ class PromptManager:
 
     def __init__(self):
         self.generate = pipeline(
-            task="text-generation",
-            model=self.MODEL,
-            dtype=self.pipe_dtype,
-            device_map=None,
-            trust_remote_code=True,
+            __task="text-generation",
+            __model=self.__MODEL,
+            __dtype=self.__pipe_dtype,
+            __device_map=None,
+            __trust_remote_code=True,
         )
         self.audio_processor = audio.AudioProcessor()
 
@@ -57,7 +57,7 @@ class PromptManager:
 
         result = self.generate(
             [{"role": "system", "content": "You are an expert karaoke evaluator. Assess the user's performance using their message, transcript, and extracted audio measurements. Do not claim that these measurements prove pitch accuracy without a reference melody."}, {"role": "user", "content": user_content}],
-            max_new_tokens=128,
+            max_new_tokens=512,
             do_sample=False,
             temperature=1.0,
             top_p=1.0,

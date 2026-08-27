@@ -25,14 +25,14 @@ os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
 
 class AudioProcessor:
     # The model used for audio transcription is Whisper Tiny.
-    model = "openai/whisper-tiny.en"
+    __model = "openai/whisper-tiny"
 
     # Creates the AudioProcessor object to use in ai.py
     def __init__(self):
         self.generate = pipeline(
-            task = "automatic-speech-recognition",
-            model = self.model,
-            device = 0 if torch.cuda.is_available() else -1
+            __task = "automatic-speech-recognition",
+            __model = self.__model,
+            __device = 0 if torch.cuda.is_available() else -1
         )
 
     # Creates a spectrogram of the audio file and saves it as an image. 
@@ -78,8 +78,15 @@ class AudioProcessor:
         transcript = self.generate({
             "array": waveform,
             "sampling_rate": sample_rate,
-        }, return_timestamps=True, generation_config=None)["text"].strip()
-        # generation_config parameter should be edited, since it's deprecated
+        },
+            return_timestamps=True,
+            chunk_length_s=30,
+            stride_length_s=(4, 2),
+            generate_kwargs={
+                "condition_on_prev_tokens": False,
+                "no_repeat_ngram_size": 3,
+            },
+        )["text"].strip()
         return {
             "transcript": transcript,
             "spectrogram_path": spectrogram_path,
