@@ -7,8 +7,8 @@ The model accepts an audio file alongside a user-inputted message to allow an LL
 
 TO-DO:
 - integrate ML
--- change the dataset
--- change the LLM used (probably) and integrate PyTorch more
--- find training method and use the LLM to evaluate the performance
+ - change the dataset
+ - change the LLM used (probably) and integrate PyTorch more
+ - find training method and use the LLM to evaluate the performance
 - allow uploading of audio file in lieu of requiring pathname
 - create website to facilitate uploading and allow further user interaction
