@@ -117,9 +117,9 @@ class AudioProcessor:
     # Reads audio, creates its plot, and transcribes it for the LLM.
     def process_audio(self, audio_path, plot_path="plot.png"):
 
-        # creates plot
+        voiceover_path = self.extract_voice(audio_path)
         plot = self.create_plot(audio_path, plot_path)
-        waveform, sample_rate = librosa.load(audio_path, sr = 16000, mono = True)
+        waveform, sample_rate = librosa.load(voiceover_path, sr = 16000, mono = True)
 
         # creates transcript
         transcript = self.generate({
