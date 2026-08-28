@@ -30,6 +30,7 @@ from demucs.apply import apply_model
 from demucs.pretrained import get_model
 import soundfile as sf
 
+# handles file path management
 ffmpeg_dir = os.path.join(
     os.path.dirname(__file__),
     ".venv",
@@ -40,8 +41,6 @@ ffmpeg_dir = os.path.join(
 )
 os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
 
-# TO-DO: Add a function to extract vocal from audio files. 
-# Then, only the vocal function should be used in making the spectrogram. 
 class AudioProcessor:
     '''
     The AudioProcessor class processes the audio into a vocal-only file and gives
@@ -58,6 +57,7 @@ class AudioProcessor:
             device = 0 if torch.cuda.is_available() else -1
         )
 
+    # helper function to return stats about a performance
     @staticmethod
     def pitch_statistics(f0):
         valid_f0 = f0[numpy.isfinite(f0)]
