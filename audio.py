@@ -5,13 +5,19 @@ This is a helper file intended for audio/video processing.
 '''
 
 import os
+import numpy
 import torch
 import librosa
-import librosa.display
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+from matplotlib.colors import Normalize
 from transformers import pipeline
+import torch
+from demucs.apply import apply_model
+from demucs.pretrained import get_model
+import soundfile as sf
 
 ffmpeg_dir = os.path.join(
     os.path.dirname(__file__),
@@ -23,6 +29,8 @@ ffmpeg_dir = os.path.join(
 )
 os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
 
+# TO-DO: Add a function to extract vocal from audio files. 
+# Then, only the vocal function should be used in making the spectrogram. 
 class AudioProcessor:
     # The model used for audio transcription is Whisper Tiny.
     __model = "openai/whisper-tiny"
@@ -30,67 +38,106 @@ class AudioProcessor:
     # Creates the AudioProcessor object to use in ai.py
     def __init__(self):
         self.generate = pipeline(
-            __task = "automatic-speech-recognition",
-            __model = self.__model,
-            __device = 0 if torch.cuda.is_available() else -1
+            task = "automatic-speech-recognition",
+            model = self.__model,
+            device = 0 if torch.cuda.is_available() else -1
         )
 
-    # Creates a spectrogram of the audio file and saves it as an image. 
-    # This allows the LLM to read the file and analyze the audio performance. 
-    def create_spectrogram(self, audio_path, output_path="spectrogram.png"):
-        # loads the audio file and creates the mel spectrogram, 
-        # which is then converted to decibels and saved as an image.
-        waveform, sample_rate = librosa.load(audio_path, sr=16000, mono=True)
-        mel_spectrogram = librosa.feature.melspectrogram(
-            y=waveform,
-            sr=sample_rate,
-            n_fft=1024,
-            hop_length=256,
-            n_mels=64,
+    # Serves to extract the voice from the audio file
+    def extract_voice(self, audio_path, output_path = "extracted_voice.wav"):
+        # Load pretrained model
+        model = get_model("htdemucs")
+
+        # Load audio file without requiring TorchCodec.
+        wav, sr = sf.read(audio_path, dtype="float32", always_2d=True)
+        wav = torch.from_numpy(wav.T)
+        if wav.shape[0] == 1:
+            wav = wav.repeat(2, 1)
+        wav = wav.unsqueeze(0)
+
+        # Run the separation
+        with torch.no_grad():
+            sources = apply_model(model, wav, split=True, shifts=1)
+
+        vocal_index = model.sources.index("vocals")
+        vocals = sources[0, vocal_index].cpu().numpy().T
+        sf.write(output_path, vocals, sr)
+        return output_path
+
+    # Creates a pitch plot of the audio file and saves it as an image.
+    def create_plot(self, audio_path, output_path = "plot.png"):
+        voiceover_path = self.extract_voice(audio_path)
+        waveform, sample_rate = librosa.load(voiceover_path, sr = 16000, mono = True)
+
+        # Estimate the sung fundamental frequency in Hertz.
+        f0, _, _ = librosa.pyin(
+            waveform,
+            fmin = librosa.note_to_hz("C2"),
+            fmax = librosa.note_to_hz("C7"),
+            sr = sample_rate,
+            frame_length = 1024,
+            hop_length = 256,
         )
-        decibel_spectrogram = librosa.power_to_db(mel_spectrogram, ref=float(mel_spectrogram.max()))
-
-        plt.figure(figsize=(12, 4))
-        librosa.display.specshow(
-            decibel_spectrogram,
-            sr=sample_rate,
-            hop_length=256,
-            x_axis="time",
-            y_axis="mel",
+        times = librosa.times_like(f0, sr = sample_rate, hop_length = 256)
+        finite_f0 = f0[numpy.isfinite(f0)]
+        display_fmax = min(
+            sample_rate / 2,
+            max(120, float(finite_f0.max() * 1.2)) if finite_f0.size else 120,
         )
 
-        # Adds a color bar to the spectrogram and saves the image.
-        plt.colorbar(format="%+2.0f dB")
-        plt.tight_layout()
-        plt.savefig(output_path)
-        plt.close()
+        figure, axis = plt.subplots(figsize = (12, 4))
+        axis.set_ylim(0, display_fmax)
+        axis.set_xlim(0, times[-1] if times.size else 1)
+        axis.set_xlabel("Time (seconds)")
+        axis.set_ylabel("Frequency (Hz)")
+        axis.set_title("Sung Fundamental Frequency")
 
-        return decibel_spectrogram
+        valid = numpy.isfinite(f0)
+        if valid.sum() > 1:
+            points = numpy.column_stack((times[valid], f0[valid]))
+            segments = numpy.stack((points[:-1], points[1:]), axis = 1)
+            pitch_norm = Normalize(vmin = 40, vmax = display_fmax, clip = True)
+            pitch_line = LineCollection(
+                segments,
+                cmap = "turbo",
+                norm = pitch_norm,
+                linewidth = 2.2,
+                zorder = 3,
+            )
+            pitch_line.set_array(f0[valid][:-1])
+            axis.add_collection(pitch_line)
+            figure.colorbar(pitch_line, ax = axis, label = "Pitch (Hz)", pad = 0.02)
 
-    # Reads audio, creates its spectrogram, and transcribes it for the LLM.
-    def process_audio(self, audio_path, spectrogram_path="spectrogram.png"):
+        figure.tight_layout()
+        figure.savefig(output_path)
+        plt.close(figure)
 
-        # creates spectrogram
-        spectrogram = self.create_spectrogram(audio_path, spectrogram_path)
-        waveform, sample_rate = librosa.load(audio_path, sr=16000, mono=True)
+        return f0
+
+    # Reads audio, creates its plot, and transcribes it for the LLM.
+    def process_audio(self, audio_path, plot_path="plot.png"):
+
+        # creates plot
+        plot = self.create_plot(audio_path, plot_path)
+        waveform, sample_rate = librosa.load(audio_path, sr = 16000, mono = True)
 
         # creates transcript
         transcript = self.generate({
             "array": waveform,
             "sampling_rate": sample_rate,
         },
-            return_timestamps=True,
-            chunk_length_s=30,
-            stride_length_s=(4, 2),
-            generate_kwargs={
+            return_timestamps = True,
+            chunk_length_s = 30,
+            stride_length_s = (4, 2),
+            generate_kwargs = {
                 "condition_on_prev_tokens": False,
                 "no_repeat_ngram_size": 3,
             },
         )["text"].strip()
         return {
             "transcript": transcript,
-            "spectrogram_path": spectrogram_path,
-            "spectrogram_shape": list(spectrogram.shape),
+            "plot_path": plot_path,
+            "plot_shape": list(plot.shape),
         }
 
     

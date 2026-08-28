@@ -1,3 +1,5 @@
+import re
+
 # importing transformers and torch libraries
 # transformers library provides the llm
 # torch gives device management and hopefully provides machine learning capabilities
@@ -26,11 +28,11 @@ class PromptManager:
 
     def __init__(self):
         self.generate = pipeline(
-            __task="text-generation",
-            __model=self.__MODEL,
-            __dtype=self.__pipe_dtype,
-            __device_map=None,
-            __trust_remote_code=True,
+            task="text-generation",
+            model=self.__MODEL,
+            dtype=self.pipe_dtype,
+            device_map=None,
+            trust_remote_code=True,
         )
         self.audio_processor = audio.AudioProcessor()
 
@@ -59,11 +61,8 @@ class PromptManager:
             [{"role": "system", "content": "You are an expert karaoke evaluator. Assess the user's performance using their message, transcript, and extracted audio measurements. Do not claim that these measurements prove pitch accuracy without a reference melody."}, {"role": "user", "content": user_content}],
             max_new_tokens=512,
             do_sample=False,
-            temperature=1.0,
-            top_p=1.0,
-            top_k=20,
-            min_p=0.0,
-            repetition_penalty=1.0,
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=4,
         )
 
         # The response is transformed into a string and printed. 
@@ -76,4 +75,10 @@ class PromptManager:
         else:
             answer = str(answer)
 
-        return answer
+        # intended to make a cleaner answer
+        sentences = re.split(r"(?<=[.!?])\s+", answer.strip())
+        cleaned_sentences = []
+        for sentence in sentences:
+            if not cleaned_sentences or sentence != cleaned_sentences[-1]:
+                cleaned_sentences.append(sentence)
+        return " ".join(cleaned_sentences)
