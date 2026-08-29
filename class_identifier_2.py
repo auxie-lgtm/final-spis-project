@@ -1,67 +1,67 @@
-import os
+import pathlib
+import abc
+import augment_dataset
 
-folders = []
-avg_discs = []
-rankings = ["S+", "S", "S-","A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F+", "F", "F-"]
-rank_eval = []
-directory = "/Users/brandon/practice-SPIS/dataset"
-keyword = "label"
+class ClassIdentifier:
+    rankings = ["S+", "S", "S-","A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F+", "F", "F-"]
 
-def calculate_weighted_avg(discrepancy):
-    perfects = []
-    alrights = []
-    mids = []
-    for value in discrepancy:
-        if value < 0.25:
-            perfects.append(value)
-        elif value < 5.0:
-            alrights.append(value)
+    def __init__(self, dataset_dir=None):
+        base_dir = pathlib.Path(__file__).resolve().parent / "sight-singing-vocal-data"
+        if dataset_dir is not None:
+            self.__directory = pathlib.Path(dataset_dir)
         else:
-            mids.append(value)
+            self.__directory = augment_dataset.get_augmented_dataset()
+        self.__keywords = ["label"]
+        self.__folders = []
+        self.__avg_discs = []
+        self.__rank_eval = []
 
-    return (sum(perfects)+sum(alrights)+sum(mids))/len(discrepancy)
-                
+    def get_directory(self):
+        return self.__directory
 
-def find_avg_disc(filename):
-    # Grabbing the first and third columns (indexes 0 and 2)
-    column_1 = []
-    column_3 = []
-    discrepancy = []
+    def get_folders(self):
+        return self.__folders
 
-    with open(filename, "r") as file:
-        for line in file:
-            # split() automatically handles spaces and tabs, while strip() removes whitespace at the ends
-            parts = line.strip().split()
-            
-            # Ensure the line isn't empty and has enough columns
-            if len(parts) > 3:
-                column_1.append(parts[1])
-                column_3.append(parts[3])
-            
-    for i in range(len(column_1)):
-        discrepancy.append(abs(round((float(column_1[i]) - float(column_3[i])), 2)))
+    def set_folders(self, folders):
+        self.__folders = folders
 
-    return calculate_weighted_avg(discrepancy)
+    def get_keywords(self):
+        return self.__keywords
 
+    def set_keywords(self, keywords):
+        self.__keywords = keywords
 
-for root, _, filenames in os.walk(directory):
-    for filename in filenames:
-        if keyword in filename:
-            text_filename = os.path.join(root, filename)
-            folders.append(text_filename)
-            avg_discs.append(find_avg_disc(text_filename))
+    def get_avg_discs(self):
+        return self.__avg_discs
 
-print(avg_discs)
+    def set_avg_discs(self, avg_discs):
+        self.__avg_discs = avg_discs
 
-for index, discrepancy in enumerate(avg_discs):
-    func = 0
-    rank_index = 0
-    while discrepancy >= func and rank_index < len(rankings) - 1:
-        func += 0.25
-        rank_index += 1
-    rank_eval.append(rankings[rank_index])
-    
-print(rank_eval)
+    def get_rank_eval(self):
+        return self.__rank_eval
+
+    def set_rank_eval(self, avg_discs):
+        eval = []
+        for index, discrepancy in enumerate(avg_discs):
+            func = 0
+            rank_index = 0
+            while discrepancy >= func and rank_index < len(self.rankings) - 1:
+                func += 0.25
+                rank_index += 1
+            eval.append(self.rankings[rank_index])
+        self.__rank_eval = eval
+
+    @abc.abstractmethod
+    def calculate_weighted_avg(self, discrepancy, point1, point2):
+        pass
+
+    @abc.abstractmethod
+    def find_avg_disc(self, filename):
+        pass
+
+    @abc.abstractmethod
+    def find_files(self):
+        pass
 
     
 
