@@ -1,17 +1,43 @@
 #---IMPORTS
+import os
+from collections import Counter
 import matplotlib.pyplot as plt
 import numpy as np
 import librosa
 import tensorflow as tf
 from class_identifier_2 import *
-from tensorflow.keras import layers, models
+from tensorflow.keras import layers, models, regularizers
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input, Dropout
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 
+MODEL_PATH = "singer_grade_model.keras"
+
+
+def save_model(model):
+    model.save(MODEL_PATH)
+    print(f"Saved trained model to {MODEL_PATH}")
+
+
+def load_model_if_exists():
+    if os.path.exists(MODEL_PATH):
+        return tf.keras.models.load_model(MODEL_PATH)
+    return None
+
+
 class KaraokeClassifier(ClassIdentifier):
-    #---CREATE CLASSES
+    #
+    # This class has two separate evaluation paths:
+    # 1) dataset_model: a trained CNN that works on the project dataset
+    # 2) standalone_estimator: a rule-based pitch/note fallback for arbitrary user files
+    #
+    # The dataset-trained model is NOT the same as the standalone evaluator.
+    # The app should prefer the dataset model when available, then fall back to the heuristic.
+    # Both outputs are approximate and should be treated as rough indicators of tonal stability,
+    # not exact pitch-accuracy claims without a reference melody.
+
+    coarse_rankings = ["S", "A", "B", "C", "D/F"]
 
     def __init__(self):
         super().__init__()
@@ -19,6 +45,8 @@ class KaraokeClassifier(ClassIdentifier):
         self.__audio_features = []
         self.__x = np.array(None)
         self.__y = np.array(None)
+        self.dataset_model = load_model_if_exists()
+        self.standalone_estimator = "pitch_note_heuristic"
 
     def get_audio_features(self):
         return self.__audio_features
@@ -128,6 +156,111 @@ class KaraokeClassifier(ClassIdentifier):
         if len(np.unique(self.get_y())) < 2:
             raise ValueError("At least two performance classes are required for a stratified split.")
 
+    def estimate_note_profile(self, audio_path, sample_rate=16000):
+        waveform, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
+        f0, voiced_flag, _ = librosa.pyin(
+            waveform,
+            fmin=librosa.note_to_hz("C2"),
+            fmax=librosa.note_to_hz("C7"),
+            sr=sample_rate,
+        )
+
+        valid = np.isfinite(f0)
+        if not valid.any():
+            return {
+                "dominant_note": "unknown",
+                "mean_pitch_hz": 0.0,
+                "pitch_std_hz": 0.0,
+                "pitch_range_hz": 0.0,
+                "voiced_ratio": 0.0,
+                "note_count": 0,
+                "midi_notes": [],
+            }
+
+        pitch_values = f0[valid]
+        midi_values = np.rint(69 + 12 * np.log2(pitch_values / 440.0))
+        midi_values = midi_values[np.isfinite(midi_values)]
+        counts = Counter(int(value) for value in midi_values)
+        dominant_midi = counts.most_common(1)[0][0]
+
+        return {
+            "dominant_note": librosa.midi_to_note(dominant_midi),
+            "mean_pitch_hz": round(float(np.mean(pitch_values)), 2),
+            "pitch_std_hz": round(float(np.std(pitch_values)), 2),
+            "pitch_range_hz": round(float(np.max(pitch_values) - np.min(pitch_values)), 2),
+            "voiced_ratio": round(float(np.mean(voiced_flag[valid])) if voiced_flag.size else 0.0, 2),
+            "note_count": len(counts),
+            "midi_notes": [int(x) for x in midi_values],
+        }
+
+    @staticmethod
+    def coarsen_grade(grade):
+        if grade is None:
+            return "D/F"
+        grade = str(grade).upper()
+        if grade.startswith("S"):
+            return "S"
+        if grade.startswith("A"):
+            return "A"
+        if grade.startswith("B"):
+            return "B"
+        if grade.startswith("C"):
+            return "C"
+        return "D/F"
+
+    def estimate_standalone_grade(self, audio_path):
+        profile = self.estimate_note_profile(audio_path)
+        if profile["note_count"] == 0:
+            return "D/F", 0.15
+
+        pitch_std = profile["pitch_std_hz"]
+        pitch_range = profile["pitch_range_hz"]
+        voiced_ratio = profile["voiced_ratio"]
+        note_count = profile["note_count"]
+
+        score = 100.0
+        score -= min(30.0, pitch_std / 6.0)
+        score -= min(25.0, pitch_range / 35.0)
+        score -= max(0.0, (1.0 - voiced_ratio) * 25.0)
+        score += min(15.0, note_count * 1.5)
+        score = max(0.0, min(100.0, score))
+
+        if score >= 90:
+            grade = "S"
+        elif score >= 80:
+            grade = "A"
+        elif score >= 70:
+            grade = "B"
+        elif score >= 60:
+            grade = "C"
+        else:
+            grade = "D/F"
+
+        confidence = max(0.25, min(0.8, score / 100.0))
+        return grade, confidence
+
+    def predict_grade(self, audio_path):
+        # 1. Try the trained dataset CNN first.
+        try:
+            feature = self.load_audio_feature(audio_path)
+            feature = np.expand_dims(feature, axis=0)
+        except Exception:
+            return self.estimate_standalone_grade(audio_path)
+
+        if self.dataset_model is None:
+            return self.estimate_standalone_grade(audio_path)
+
+        try:
+            probabilities = self.dataset_model.predict(feature, verbose=0)[0]
+            class_index = int(np.argmax(probabilities))
+            raw_grade = self.rankings[class_index]
+            grade = self.coarsen_grade(raw_grade)
+            confidence = float(probabilities[class_index])
+            return grade, confidence
+        except Exception:
+            # 2. If the dataset model fails, fall back to the standalone heuristic.
+            return self.estimate_standalone_grade(audio_path)
+
 
     def train(self):
         try:
@@ -162,24 +295,44 @@ class KaraokeClassifier(ClassIdentifier):
         y_val_oh = tf.keras.utils.to_categorical(y_val, class_count)
         y_test_oh = tf.keras.utils.to_categorical(y_test, class_count)
 
-        # Define the CNN model -- Trial and error qty. layers to fine-tune
+        # Define a simpler CNN to reduce memorization on limited data.
         model = Sequential()
         model.add(Input(shape=(128, 256, 1)))
-        model.add(Conv2D(32, (3, 3), activation='relu'))
+        model.add(Conv2D(16, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
         model.add(MaxPooling2D((2, 2)))
-        model.add(Conv2D(64, (3, 3), activation='relu'))
+        model.add(Dropout(0.2))
+
+        model.add(Conv2D(32, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
         model.add(MaxPooling2D((2, 2)))
-        model.add(Conv2D(64, (3, 3), activation='relu')) # notice no MaxPool after this one
+        model.add(Dropout(0.2))
+
         model.add(Flatten())
-        model.add(Dense(64, activation='relu'))
+        model.add(Dense(32, activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
+        model.add(Dropout(0.4))
         model.add(Dense(class_count, activation='softmax'))
         model.summary()
 
         # Compile the model
         model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-        # Train the model
-        model.fit(x_train, y_train_oh, epochs=10, batch_size=32, validation_data=(x_val, y_val_oh))
+        early_stop = tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss',
+            patience=3,
+            restore_best_weights=True,
+        )
+
+        # Train the model with early stopping to prevent overfitting.
+        history = model.fit(
+            x_train,
+            y_train_oh,
+            epochs=20,
+            batch_size=16,
+            validation_data=(x_val, y_val_oh),
+            callbacks=[early_stop],
+        )
+        print("Training history keys:", list(history.history.keys()))
+        self.dataset_model = model
+        save_model(model)
 
         # Evaluate the model
         y_pred = model.predict(x_test)
@@ -188,8 +341,8 @@ class KaraokeClassifier(ClassIdentifier):
         loss, acc = model.evaluate(x_test, y_test_oh)
         print("Test accuracy:", acc)
         print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
-
-k = KaraokeClassifier()
-k.find_files()
-k.train()
-        
+        return model
+if __name__ == "__main__":
+    k = KaraokeClassifier()
+    k.find_files()
+    k.train()

@@ -19,15 +19,15 @@ import re
 from transformers import pipeline
 import torch
 import audio
+from karaoke_classifier import KaraokeClassifier
 
 class PromptManager:
     '''
-    The PromptManager class provides the possible prompts of the artificial intelligence
-    that evaluates singing performance based on user input. The user inputs a message
-    alongside video or audio files and then the AI uses this message to evaluate the karaoke performance.
+    The PromptManager class provides the prompts for the LLM to evaluate singing performance.
+    It receives both audio-derived measurements and, when available, the dataset classifier score.
     '''
 
-    # The model used for text generationis TinyLlama. 
+    # The model used for text generation is TinyLlama. 
 
     __MODEL = "TinyLlama/tinyllama-1.1B-Chat-v1.0"
 
@@ -36,7 +36,7 @@ class PromptManager:
 
     pipe_dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 
-    # Generates the model
+    # Generates the text generation model
 
     def __init__(self):
         self.generate = pipeline(
@@ -47,33 +47,52 @@ class PromptManager:
             trust_remote_code=True,
         )
         self.audio_processor = audio.AudioProcessor()
+        self.classifier = KaraokeClassifier()
 
-    # The input message. The user is given an input prompt to summarize their day;
-    # the message provided is then used to generate a response from the model. 
-
-    def prompt(self):
-        # change into a prompt that allows user to input a message
-        # alongside an audio file to evaluate their karaoke performance.
-        
-        message = input("Describe your karaoke performance: ")
+    def evaluate_song(self, audio_path, message):
         try:
-            audio_path = input("Path to the audio file: ")
             audio_analysis = self.audio_processor.process_audio(audio_path)
-        except Exception as e:
-            return f"Error occurred while processing audio: {e}"
+            metrics = self.audio_processor.evaluate_audio_metrics(audio_path)
 
-        # the context which is given to the LLM
-        user_content = (
-            f"User message: {message}\n\n"
-            f"Audio analysis: {audio_analysis}\n\n"
-            "Use the pitch statistics and transcript as evidence. Explain that pitch variation is not the same as pitch accuracy because no reference melody is provided.\n\n"
-            "Evaluate the performance using the available information."
+            dataset_grade, dataset_confidence = self.classifier.estimate_standalone_grade(audio_path)
+            if self.classifier.dataset_model is not None:
+                try:
+                    dataset_grade, dataset_confidence = self.classifier.predict_grade(audio_path)
+                except Exception:
+                    dataset_grade, dataset_confidence = self.classifier.estimate_standalone_grade(audio_path)
+
+            standalone_grade, standalone_confidence = self.classifier.estimate_standalone_grade(audio_path)
+        except Exception as exc:
+            return f"Error occurred while processing audio: {exc}"
+
+        prompt = (
+            f"User description: {message}\n\n"
+            f"Approximate dataset-model grade: {dataset_grade}\n"
+            f"Dataset confidence: {dataset_confidence:.2f}\n\n"
+            f"Approximate standalone heuristic grade: {standalone_grade}\n"
+            f"Standalone confidence: {standalone_confidence:.2f}\n\n"
+            f"Audio metrics:\n"
+            f"- pitch score: {metrics['pitch_score']}\n"
+            f"- beat score: {metrics['beat_score']}\n"
+            f"- clarity score: {metrics['clarity_score']}\n"
+            f"- consistency score: {metrics['consistency_score']}\n\n"
+            f"Transcript:\n{audio_analysis['transcript']}\n\n"
+            f"Pitch statistics:\n{audio_analysis['pitch_statistics']}\n\n"
+            "Important: there is no reference melody or exact note target. Treat both scores as rough indicators of tonal stability and vocal control, not precise pitch-accuracy measurements.\n\n"
+            "Give a concise but helpful karaoke evaluation. Include:\n"
+            "1. an overall verdict\n"
+            "2. what the singer did well\n"
+            "3. three specific improvements\n"
+            "4. a brief explanation of how the audio metrics and rough score sources support the verdict\n"
+            "5. a sentence stating that the score is approximate because there is no reference melody."
         )
 
-        # generates the result
         result = self.generate(
-            [{"role": "system", "content": "You are an expert karaoke evaluator. Assess the user's performance using their message, transcript, and extracted audio measurements. Do not claim that these measurements prove pitch accuracy without a reference melody."}, {"role": "user", "content": user_content}],
-            max_new_tokens=512,
+            [
+                {"role": "system", "content": "You are an expert karaoke coach and music evaluator."},
+                {"role": "user", "content": prompt},
+            ],
+            max_new_tokens=400,
             do_sample=False,
             repetition_penalty=1.1,
             no_repeat_ngram_size=4,
@@ -83,9 +102,7 @@ class PromptManager:
         answer = result[0]["generated_text"]
         if isinstance(answer, list):
             answer = answer[-1].get("content", "")
-        elif isinstance(answer, str):
-            answer = answer
-        else:
+        elif not isinstance(answer, str):
             answer = str(answer)
 
         # intended to make a cleaner answer
@@ -95,3 +112,8 @@ class PromptManager:
             if not cleaned_sentences or sentence != cleaned_sentences[-1]:
                 cleaned_sentences.append(sentence)
         return " ".join(cleaned_sentences)
+
+    def prompt(self):
+        message = input("Describe your karaoke performance: ")
+        audio_path = input("Path to the audio file: ")
+        return self.evaluate_song(audio_path, message)
