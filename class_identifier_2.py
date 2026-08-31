@@ -3,7 +3,9 @@ import abc
 import augment_dataset
 
 class ClassIdentifier:
-    rankings = ["S+", "S", "S-","A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F+", "F", "F-"]
+    # Keep the dataset labels coarse to avoid overfitting on a tiny dataset.
+    # Six coarse classes are much more stable than 18 fine-grained letter rankings.
+    rankings = ["S", "A", "B", "C", "D", "F"]
 
     def __init__(self, dataset_dir=None):
         base_dir = pathlib.Path(__file__).resolve().parent / "sight-singing-vocal-data"
@@ -41,14 +43,25 @@ class ClassIdentifier:
         return self.__rank_eval
 
     def set_rank_eval(self, avg_discs):
+        # Use a wider, more even scale to spread labels across all six bands.
+        # The goal is not to be mathematically perfect; it is to ensure the model sees
+        # all classes and does not collapse into just a few dominant bins.
+        thresholds = [0.5, 1.0, 2.0, 4.0, 7.0]
         eval = []
-        for index, discrepancy in enumerate(avg_discs):
-            func = 0
-            rank_index = 0
-            while discrepancy >= func and rank_index < len(self.rankings) - 1:
-                func += 0.25
-                rank_index += 1
-            eval.append(self.rankings[rank_index])
+        for discrepancy in avg_discs:
+            if discrepancy < thresholds[0]:
+                grade = "S"
+            elif discrepancy < thresholds[1]:
+                grade = "A"
+            elif discrepancy < thresholds[2]:
+                grade = "B"
+            elif discrepancy < thresholds[3]:
+                grade = "C"
+            elif discrepancy < thresholds[4]:
+                grade = "D"
+            else:
+                grade = "F"
+            eval.append(grade)
         self.__rank_eval = eval
 
     @abc.abstractmethod

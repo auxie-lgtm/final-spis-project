@@ -24,6 +24,15 @@ def save_model(model):
     print(f"Saved trained model to {MODEL_PATH}")
 
 
+# Remove any old saved model if you want to force a clean retrain.
+def remove_saved_model():
+    if os.path.exists(MODEL_PATH):
+        os.remove(MODEL_PATH)
+        print(f"Removed stale model: {MODEL_PATH}")
+    else:
+        print(f"No saved model found at {MODEL_PATH}; nothing to remove.")
+
+
 # Load the trained model if it already exists in the project directory.
 def load_model_if_exists():
     if os.path.exists(MODEL_PATH):
@@ -42,17 +51,18 @@ class KaraokeClassifier(ClassIdentifier):
     # Both outputs are approximate and should be treated as rough indicators of tonal stability,
     # not exact pitch-accuracy claims without a reference melody.
 
-    # The dataset uses a large ranking system, but the app can coarse-grade it into a smaller set
-    # for cleaner coaching feedback and less overconfident output.
-    coarse_rankings = ["S", "A", "B", "C", "D/F"]
+    # Use a six-class grade system so training remains stable on a smaller dataset.
+    coarse_rankings = ["S", "A", "B", "C", "D", "F"]
 
-    # Initialize the classifier and try to load an existing trained model.
-    def __init__(self):
+    # Initialize the classifier and optionally remove a stale model before loading.
+    def __init__(self, force_retrain=False):
         super().__init__()
         self.set_keywords(["_label.txt", ".mp3"])
         self.__audio_features = []
         self.__x = np.array(None)
         self.__y = np.array(None)
+        if force_retrain:
+            remove_saved_model()
         self.dataset_model = load_model_if_exists()
         self.standalone_estimator = "pitch_note_heuristic"
 
@@ -215,10 +225,11 @@ class KaraokeClassifier(ClassIdentifier):
         }
 
     # Collapse the detailed letter ranks down to a more readable overall set.
+    # The app expects single-letter grades only, so D/F should never be emitted.
     @staticmethod
     def coarsen_grade(grade):
         if grade is None:
-            return "D/F"
+            return "F"
         grade = str(grade).upper()
         if grade.startswith("S"):
             return "S"
@@ -228,7 +239,9 @@ class KaraokeClassifier(ClassIdentifier):
             return "B"
         if grade.startswith("C"):
             return "C"
-        return "D/F"
+        if grade.startswith("D"):
+            return "D"
+        return "F"
 
     # Heuristic fallback for arbitrary user files.
     # This does not claim exact pitch accuracy; it only offers a rough estimate based on
@@ -236,7 +249,10 @@ class KaraokeClassifier(ClassIdentifier):
     def estimate_standalone_grade(self, audio_path):
         profile = self.estimate_note_profile(audio_path)
         if profile["note_count"] == 0:
-            return "D/F", 0.15
+            # No usable pitch track means we could not confidently measure vocal stability.
+            # Instead of forcing an automatic F, return a low-confidence D so noisy or spoken clips
+            # are not penalized as aggressively as a truly poor singing performance.
+            return "D", 0.18
 
         pitch_std = profile["pitch_std_hz"]
         pitch_range = profile["pitch_range_hz"]
@@ -258,8 +274,10 @@ class KaraokeClassifier(ClassIdentifier):
             grade = "B"
         elif score >= 60:
             grade = "C"
+        elif score >= 30:
+            grade = "D"
         else:
-            grade = "D/F"
+            grade = "F"
 
         confidence = max(0.25, min(0.8, score / 100.0))
         return grade, confidence
@@ -376,6 +394,6 @@ class KaraokeClassifier(ClassIdentifier):
 # Script entry point for explicit training runs only.
 # This block is intentionally separate from the runtime evaluation workflow.
 if __name__ == "__main__":
-    k = KaraokeClassifier()
+    k = KaraokeClassifier(True)
     k.find_files()
     k.train()
