@@ -124,7 +124,5 @@ class PromptManager:
 
     # CLI-style entry point used when the script is run directly.
     # It asks for a user description and a file path, then invokes the full evaluation pipeline.
-    def prompt(self):
-        message = input("Describe your karaoke performance: ")
-        audio_path = input("Path to the audio file: ")
+    def prompt(self, message, audio_path): #Retrieved from app.py
         return self.evaluate_song(audio_path, message)
