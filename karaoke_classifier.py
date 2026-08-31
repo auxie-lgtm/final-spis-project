@@ -1,4 +1,6 @@
-#---IMPORTS
+# --- IMPORTS ---
+# These imports provide the dataset logic, numerical arrays, audio feature extraction,
+# and the TensorFlow model infrastructure used for the trained singing-grade CNN.
 import os
 from collections import Counter
 import matplotlib.pyplot as plt
@@ -12,14 +14,17 @@ from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Input,
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 
+# File location for the saved trained model.
 MODEL_PATH = "singer_grade_model.keras"
 
 
+# Save the trained model to disk so it can be reused later without retraining.
 def save_model(model):
     model.save(MODEL_PATH)
     print(f"Saved trained model to {MODEL_PATH}")
 
 
+# Load the trained model if it already exists in the project directory.
 def load_model_if_exists():
     if os.path.exists(MODEL_PATH):
         return tf.keras.models.load_model(MODEL_PATH)
@@ -37,8 +42,11 @@ class KaraokeClassifier(ClassIdentifier):
     # Both outputs are approximate and should be treated as rough indicators of tonal stability,
     # not exact pitch-accuracy claims without a reference melody.
 
+    # The dataset uses a large ranking system, but the app can coarse-grade it into a smaller set
+    # for cleaner coaching feedback and less overconfident output.
     coarse_rankings = ["S", "A", "B", "C", "D/F"]
 
+    # Initialize the classifier and try to load an existing trained model.
     def __init__(self):
         super().__init__()
         self.set_keywords(["_label.txt", ".mp3"])
@@ -48,6 +56,7 @@ class KaraokeClassifier(ClassIdentifier):
         self.dataset_model = load_model_if_exists()
         self.standalone_estimator = "pitch_note_heuristic"
 
+    # Accessor methods for the internal feature collection and labels.
     def get_audio_features(self):
         return self.__audio_features
 
@@ -93,6 +102,8 @@ class KaraokeClassifier(ClassIdentifier):
         return (sum(perfects)+sum(alrights)+sum(mids))/len(discrepancy)
                     
 
+    # Read a label file and compute an average discrepancy value.
+    # These discrepancy values are the dataset's underlying signal for ranking quality.
     def find_avg_disc(self, filename):
         # Grabbing the first and third columns (indexes 0 and 2)
         column_1 = []
@@ -114,6 +125,8 @@ class KaraokeClassifier(ClassIdentifier):
 
         return self.calculate_weighted_avg(discrepancy)
 
+    # Convert a raw audio file into a mel spectrogram feature suitable for CNN input.
+    # This is the main input representation used by the trained model.
     def load_audio_feature(self, audio_path, sample_rate=16000, n_mels=128, frame_count=256):
         waveform, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
         mel_feature = librosa.feature.melspectrogram(
@@ -128,6 +141,10 @@ class KaraokeClassifier(ClassIdentifier):
         mel_feature = np.clip((mel_feature + 80.0) / 80.0, 0.0, 1.0)
         return mel_feature[..., np.newaxis].astype(np.float32)
 
+    # Discover all labeled dataset samples and transform them into training data.
+    # Each sample directory is expected to contain:
+    # - a label file ending in _label.txt
+    # - an audio file ending in .mp3
     def find_files(self):
         audio_features = []
         folders = []
@@ -150,12 +167,16 @@ class KaraokeClassifier(ClassIdentifier):
         self.set_x(self.get_audio_features())
         self.set_y(self.get_rank_eval())
 
+    # Validate the dataset before training so the model is not fit on empty or malformed input.
     def check_valid_inputs(self):
         if len(self.get_x()) == 0:
             raise ValueError(f"No audio samples were found in {self.get_directory()}.")
         if len(np.unique(self.get_y())) < 2:
             raise ValueError("At least two performance classes are required for a stratified split.")
 
+    # Estimate a basic note/pitch profile for a standalone audio file.
+    # This provides a fallback when the file is not part of the training dataset and
+    # we still want a rough evaluative signal.
     def estimate_note_profile(self, audio_path, sample_rate=16000):
         waveform, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
         f0, voiced_flag, _ = librosa.pyin(
@@ -193,6 +214,7 @@ class KaraokeClassifier(ClassIdentifier):
             "midi_notes": [int(x) for x in midi_values],
         }
 
+    # Collapse the detailed letter ranks down to a more readable overall set.
     @staticmethod
     def coarsen_grade(grade):
         if grade is None:
@@ -208,6 +230,9 @@ class KaraokeClassifier(ClassIdentifier):
             return "C"
         return "D/F"
 
+    # Heuristic fallback for arbitrary user files.
+    # This does not claim exact pitch accuracy; it only offers a rough estimate based on
+    # pitch variance, range, and voiced coverage.
     def estimate_standalone_grade(self, audio_path):
         profile = self.estimate_note_profile(audio_path)
         if profile["note_count"] == 0:
@@ -239,6 +264,8 @@ class KaraokeClassifier(ClassIdentifier):
         confidence = max(0.25, min(0.8, score / 100.0))
         return grade, confidence
 
+    # Public inference method used by the rest of the app.
+    # The trained CNN is tried first if available, then the heuristic fallback is used.
     def predict_grade(self, audio_path):
         # 1. Try the trained dataset CNN first.
         try:
@@ -262,6 +289,9 @@ class KaraokeClassifier(ClassIdentifier):
             return self.estimate_standalone_grade(audio_path)
 
 
+    # Train the CNN on the labeled dataset.
+    # This is intentionally kept separate from the runtime evaluation flow so the app can
+    # load a saved model instead of retraining on each use.
     def train(self):
         try:
             self.check_valid_inputs()
@@ -334,7 +364,7 @@ class KaraokeClassifier(ClassIdentifier):
         self.dataset_model = model
         save_model(model)
 
-        # Evaluate the model
+        # Evaluate the trained model on the holdout test set.
         y_pred = model.predict(x_test)
         y_pred = tf.argmax(y_pred, axis=1)
 
@@ -342,6 +372,9 @@ class KaraokeClassifier(ClassIdentifier):
         print("Test accuracy:", acc)
         print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
         return model
+
+# Script entry point for explicit training runs only.
+# This block is intentionally separate from the runtime evaluation workflow.
 if __name__ == "__main__":
     k = KaraokeClassifier()
     k.find_files()

@@ -43,20 +43,26 @@ os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
 
 class AudioProcessor:
     '''
-    The AudioProcessor class processes the audio into a vocal-only file and gives
-    important metrics used by the LLM in the PromptManager class to evaluate the performance. 
+    AudioProcessor handles the raw audio pipeline for the karaoke evaluator.
+
+    It is responsible for converting uploaded audio into a clean signal representation,
+    extracting useful vocal features, and turning those features into summary metrics
+    that the LLM can explain to the user.
     '''
-    # The model used for audio transcription is Whisper Tiny.
+    # Whisper Tiny is used for speech-to-text transcription of the vocal track.
     __model = "openai/whisper-tiny"
 
-    # Creates the AudioProcessor object to use in ai.py
+    # Constructor: load the Whisper processor and model once, then reuse them for all files.
+    # This keeps the runtime simple and avoids re-downloading or reinitializing the model each time.
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.processor = AutoProcessor.from_pretrained(self.__model)
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(self.__model).to(self.device)
         self.model.config.forced_decoder_ids = self.processor.get_decoder_prompt_ids(language="en", task="transcribe")
 
-    # helper function to return stats about a performance
+    # Helper for summarizing pitch information extracted from the waveform.
+    # This produces a compact dictionary containing statistics such as mean pitch,
+    # pitch range, and voiced percentage that can be shown to the user or fed to the LLM.
     @staticmethod
     def pitch_statistics(f0):
         valid_f0 = f0[numpy.isfinite(f0)]
@@ -83,6 +89,9 @@ class AudioProcessor:
             "voiced_percentage": round(float(valid_f0.size / f0.size * 100), 2),
         }
 
+    # These scoring helpers convert raw audio measurements into rough 0-100 values.
+    # The goal is not to be a scientifically exact rating system, but to provide an
+    # interpretable signal for the LLM and the user.
     @staticmethod
     def _score_pitch(pitch_std, pitch_range, voiced_ratio):
         score = 100.0
@@ -115,6 +124,9 @@ class AudioProcessor:
         score -= max(0.0, (1.0 - min(1.0, energy * 2.0)) * 20.0)
         return max(0.0, min(100.0, score))
 
+    # Evaluate the audio file by computing signal-based indicators of vocal quality.
+    # This method is one of the core parts of the product: it produces objective metrics
+    # even when no dataset label or reference melody is available.
     def evaluate_audio_metrics(self, audio_path):
         waveform, sample_rate = librosa.load(audio_path, sr=16000, mono=True)
 
@@ -160,7 +172,10 @@ class AudioProcessor:
             "tempo_bpm": round(tempo_bpm, 1),
         }
 
-    # Serves to extract the voice from the audio file
+    # Separate the vocal track from the original audio file.
+    # Demucs is a pretrained source-separation model that isolates the vocal stem from a mixed song.
+    # This is useful because we want the transcription and pitch analysis to focus on the singer's voice,
+    # rather than the accompaniment or background music.
     def extract_voice(self, audio_path, output_path = "extracted_voice.wav"):
         # Load pretrained model
         model = get_model("htdemucs")
@@ -181,7 +196,9 @@ class AudioProcessor:
         sf.write(output_path, vocals, sr)
         return output_path
 
-    # Creates a pitch plot of the audio file and saves it as an image.
+    # Generate a visual pitch contour plot for the user.
+    # This is mainly a debugging and UX aid: it shows how the sung pitch changes over time.
+    # The plot is saved to disk and can be displayed in the app if needed.
     def create_plot(self, audio_path, output_path = "plot.png"):
         waveform, sample_rate = librosa.load(audio_path, sr = 16000, mono = True)
 
@@ -230,7 +247,13 @@ class AudioProcessor:
 
         return f0
 
-    # Reads audio, creates its plot, and transcribes it for the LLM.
+    # Full audio-processing pipeline used by the evaluation system.
+    # It performs the end-to-end workflow:
+    # 1. isolate vocals
+    # 2. generate a pitch plot
+    # 3. extract pitch statistics
+    # 4. transcribe the vocal track with Whisper
+    # 5. return a structured dictionary for the LLM to interpret.
     def process_audio(self, audio_path, plot_path="plot.png"):
 
         voiceover_path = self.extract_voice(audio_path)
