@@ -1,12 +1,12 @@
 from flask import Flask, render_template, jsonify, request
-from ai import PromptManager, overall_grade
+from ai import PromptManager
 
 app = Flask(__name__)
 manager = PromptManager()
 
 @app.route('/')
 def home():
-    return render_template('index.html', grade=overall_grade)
+    return render_template('index.html', grade=manager.get_overall_grade())
 
 
 @app.route('/run-code', methods=['POST'])
@@ -18,7 +18,7 @@ def run_code():
         return jsonify({"error": "Please provide both a description and an audio path."}), 400
 
     try:
-        result = manager.prompt(message, audio_path)
+        result = manager.evaluate_song(audio_path, message)
         return jsonify({"output": result})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
