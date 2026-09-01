@@ -117,8 +117,6 @@
     filter:drop-shadow(0 0 10px #c9b8ff) drop-shadow(0 0 22px #c9b8ff); }
   #rankLetter.rank-D{ color:#ff9f4f; -webkit-text-stroke-color:rgba(255,159,79,.4);
     filter:drop-shadow(0 0 10px #ff9f4f) drop-shadow(0 0 22px #ff9f4f); }
-  #rankLetter.rank-E{ color:#ff6f4f; -webkit-text-stroke-color:rgba(255,111,79,.4);
-    filter:drop-shadow(0 0 10px #ff6f4f) drop-shadow(0 0 22px #ff6f4f); }
   #rankLetter.rank-F{ color:var(--neon-red); -webkit-text-stroke-color:rgba(255,59,59,.5);
     filter:drop-shadow(0 0 16px var(--neon-red)) drop-shadow(0 0 40px var(--neon-red)); }
 
@@ -130,7 +128,7 @@
     animation:land .6s cubic-bezier(.2,1.4,.4,1) forwards;
   }
 
-  .landed.rank-F, .landed.rank-E, .landed.rank-D{
+  .landed.rank-F, .landed.rank-D{
     animation:landHarsh .55s cubic-bezier(.36,.07,.19,.97) forwards;
   }
 
@@ -269,14 +267,13 @@
 </div>
 
 <script>
-  const RANKS = ["S","A","B","C","D","E","F"];
+  const RANKS = ["S","A","B","C","D","F"];
   const CAPTIONS = {
     S:"MARVELOUS",
     A:"GREAT",
     B:"GOOD",
     C:"ALMOST",
     D:"POOR",
-    E:"BAD",
     F:"FAILED"
   };
 
