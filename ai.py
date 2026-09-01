@@ -51,6 +51,7 @@ class PromptManager:
         )
         self.audio_processor = audio.AudioProcessor()
         self.classifier = KaraokeClassifier()
+        self.__overall_grade = None  # Initialize the overall grade attribute
 
     @staticmethod
     def _normalize_grade(grade):
@@ -229,6 +230,7 @@ class PromptManager:
 
         blended_score = max(0.0, min(5.0, blended_score))
         overall_grade = self._score_to_letter(blended_score)
+        self.__overall_grade = overall_grade  # Store the overall grade for external access
         return overall_grade, blended_score
 
     # Evaluate one uploaded song.
@@ -273,6 +275,10 @@ class PromptManager:
             message,
         )
         return response
+
+    def get_overall_grade(self):
+        return self.__overall_grade
+
 
     # CLI-style entry point used when the script is run directly.
     # It asks for a user description and a file path, then invokes the full evaluation pipeline.

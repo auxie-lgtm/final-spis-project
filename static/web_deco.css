@@ -1,0 +1,40 @@
+body {
+  background: url('music-sheet.jpg') no-repeat center / cover fixed;
+  min-height: 100vh;
+}
+
+.big_title {
+  font-size: 3em;
+  color: #000000; /* Black text */
+  text-align: center;
+  margin-top: 20px;
+  z-index: 2; /* Ensures it appears above the white square */
+  position: relative;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  font-family: Arial, Helvetica, sans-serif;
+  z-index: 2; /* Ensures it appears above the white square */
+  position: relative;
+  display: inline-block;
+  position: absolute;
+  top: 16.7%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+
+}
+
+.white-square {
+  position: relative;
+  display: inline-block;
+  background-color: #ffffff; /* White background */
+  z-index: 1;
+  height: 100vh;           /* Takes up full viewport height */
+  width: 67%;  
+  left: 17.067%;
+  border-radius: 20px; 
+  corner-shape: bevel;
+  
+}

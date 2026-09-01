@@ -31,12 +31,6 @@ def get_prompt_manager():
 def render_home():
     return render_template('index.html')
 
-
-@app.route('/eval')
-def render_evaluation():
-    return render_template('eval.html')
-
-
 @app.route('/result', methods=['GET', 'POST'])
 def render_result():
     try:
@@ -55,9 +49,9 @@ def render_result():
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-        return render_template('result.html', response=response)
+        return render_template('result.html', response=response, grade=manager.get_overall_grade())
     except Exception as e:
-        return render_template('result.html', response=str(e))
+        return render_template('result.html', response=str(e), grade='F')
 
 
 if __name__ == '__main__':
