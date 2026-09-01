@@ -12,46 +12,19 @@
         <h1 class="big_title">Karaoke Feedback</h1>
 
     <body>
-        <form id="evaluation-form" method="POST" action="/run-code">
+        <form id="evaluation-form" method="POST" action="/result" enctype="multipart/form-data">
             <div>
-                <label for="description">Describe your performance:</label><br>
-                <input type="text" id="description" name="description" placeholder="Describe your performance..." required>
+                <label for="message">Describe your performance:</label><br>
+                <input type="text" id="message" name="message" placeholder="Describe your performance...">
             </div>
             <div>
-                <label for="audio_directory">Audio path:</label><br>
-                <input type="text" id="audio_directory" name="audio_directory" placeholder="Type audio directory..." required>
+                <label for="audio_file">Audio file:</label><br>
+                <input type="file" id="audio_file" name="audio_file" accept=".wav,.mp3" required>
             </div>
             <button type="submit">Evaluate</button>
         </form>
 
         <div id="resultDisplay" style="margin-top: 20px;"></div>
     </div>
-        
-
-        <script>
-            document.getElementById('evaluation-form').addEventListener('submit', function(event) {
-                event.preventDefault();
-
-                const formData = new FormData(this);
-
-                fetch('/run-code', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(async response => {
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Request failed');
-                    }
-                    document.getElementById('resultDisplay').innerText = data.output;
-                })
-                .catch(error => {
-                    document.getElementById('resultDisplay').innerText = 'Error: ' + error.message;
-                    console.error('Error:', error);
-
-                });
-            });
-            
-        </script>
     </body>
 </html>

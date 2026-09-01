@@ -44,15 +44,16 @@ def render_result():
             audio_file.save(temp_file.name)
             temp_path = temp_file.name
 
-        response = get_prompt_manager().evaluate_song(temp_path, message)
+        prompt_manager = get_prompt_manager()
+        response = prompt_manager.evaluate_song(temp_path, message)
+        grade = prompt_manager.get_overall_grade() or 'F'
 
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-        return render_template('result.html', response=response, grade=manager.get_overall_grade())
+        return render_template('result.html', response=response, grade=grade)
     except Exception as e:
         return render_template('result.html', response=str(e), grade='F')
-
 
 if __name__ == '__main__':
     ensure_dataset_model()
