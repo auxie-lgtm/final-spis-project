@@ -9,13 +9,8 @@ app = Flask(__name__)
 MODEL_PATH = os.path.join(os.path.dirname(__file__), 'singer_grade_model.keras')
 prompt_manager = None
 
-
 def ensure_dataset_model():
-    if os.path.exists(MODEL_PATH):
-        print(f"Using cached model: {MODEL_PATH}")
-        return
-    print('Training karaoke model before app startup...')
-    classifier = KaraokeClassifier(force_retrain=False)
+    classifier = KaraokeClassifier(force_retrain=True)
     classifier.find_files()
     classifier.train()
 
