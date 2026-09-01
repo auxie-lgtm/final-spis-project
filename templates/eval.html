@@ -5,7 +5,7 @@
  {% block content %}
       <h1>Singing Evaluation</h1>
       <p>This page allows you to evaluate your singing perfromance. </p>
-      <form action="result">
+      <form action="result" method="post" enctype="multipart/form-data">
         <p>Describe your performance here: <input type="string" name="message" value=""></p>
         <input type="file" id="file" name="audio_file">
         <input type="submit" value="Evaluate!">

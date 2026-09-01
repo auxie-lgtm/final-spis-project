@@ -1,22 +1,65 @@
-from flask import Flask, render_template
-from karaoke_classifier import *
+import os
+import tempfile
+from flask import Flask, render_template, request
+from ai import PromptManager
+from karaoke_classifier import KaraokeClassifier
+
 app = Flask(__name__)
 
-@app.before_first_request
-def initialize_model():
-    k = KaraokeClassifier()
-    k.find_files()
-    k.train()
+MODEL_PATH = os.path.join(os.path.dirname(__file__), 'singer_grade_model.keras')
+prompt_manager = None
+
+
+def ensure_dataset_model():
+    if os.path.exists(MODEL_PATH):
+        print(f"Using cached model: {MODEL_PATH}")
+        return
+    print('Training karaoke model before app startup...')
+    classifier = KaraokeClassifier(force_retrain=False)
+    classifier.find_files()
+    classifier.train()
+
+
+def get_prompt_manager():
+    global prompt_manager
+    if prompt_manager is None:
+        prompt_manager = PromptManager()
+    return prompt_manager
+
 
 @app.route('/')
 def render_home():
     return render_template('index.html')
+
 
 @app.route('/eval')
 def render_evaluation():
     return render_template('eval.html')
 
 
+@app.route('/result', methods=['GET', 'POST'])
+def render_result():
+    try:
+        audio_file = request.files.get('audio_file')
+        message = request.form.get('message') or request.args.get('message') or ''
 
-if __name__ == "__main__":
-   app.run(host='0.0.0.0')
+        if audio_file is None or not audio_file.filename:
+            raise ValueError('No audio file was uploaded.')
+
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+            audio_file.save(temp_file.name)
+            temp_path = temp_file.name
+
+        response = get_prompt_manager().evaluate_song(temp_path, message)
+
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        return render_template('result.html', response=response)
+    except Exception as e:
+        return render_template('result.html', response=str(e))
+
+
+if __name__ == '__main__':
+    ensure_dataset_model()
+    app.run(host='0.0.0.0', debug=False)
