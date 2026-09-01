@@ -1,13 +1,12 @@
 from flask import Flask, render_template, jsonify, request
-from ai import PromptManager
-
+from ai import PromptManager, overall_grade
 
 app = Flask(__name__)
 manager = PromptManager()
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    return render_template('index.html', grade=overall_grade)
 
 
 @app.route('/run-code', methods=['POST'])
