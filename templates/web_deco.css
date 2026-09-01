@@ -1,0 +1,19 @@
+body {
+  background: url('music-sheet.jpg') no-repeat center / cover fixed;
+  min-height: 100vh;
+}
+
+.center {
+  display: flex;
+  justify-content: center; /* Centers horizontally */ 
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.white-square {
+  width: 100px;
+  height: 100px;
+  background-color: #ffffff; /* White background */
+  
+  /* Optional: Adds a border so you can see it on a white background */
+  border: 1px solid #ccc; 
+}

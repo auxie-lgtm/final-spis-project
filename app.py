@@ -5,7 +5,6 @@ from ai import PromptManager
 app = Flask(__name__)
 manager = PromptManager()
 
-
 @app.route('/')
 def home():
     return render_template('index.html')
