@@ -2,8 +2,6 @@ import os
 import tempfile
 import threading
 from flask import Flask, jsonify, render_template, request
-from ai import PromptManager
-from karaoke_classifier import KaraokeClassifier
 
 app = Flask(__name__)
 
@@ -12,6 +10,7 @@ prompt_manager = None
 
 
 def ensure_dataset_model():
+    from karaoke_classifier import KaraokeClassifier
     if os.path.exists(MODEL_PATH):
         print(f"Using cached model: {MODEL_PATH}")
         return
@@ -24,6 +23,7 @@ def ensure_dataset_model():
 def get_prompt_manager():
     global prompt_manager
     if prompt_manager is None:
+        from ai import PromptManager
         prompt_manager = PromptManager()
     return prompt_manager
 
