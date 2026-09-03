@@ -3,7 +3,7 @@
 <!-- Title of website -->
     <head>
         <meta charset="UTF-8">
-        <link rel="stylesheet" href="web_deco.css">
+        <link rel="stylesheet" href="{{ url_for('static', filename='web_deco.css') }}">
         <title class="center">Karaoke Feedback</title>
     </head>
 
@@ -25,21 +25,17 @@ What fun it is to ride and sing <br> A sleighing song tonight!</h4>
         on <br> a letter grade basis: Rank S to Rank F.</h3>
 
     <div class="center">
-        
-        
-        
 
-<!-- Evaluation button and text fields -->
-    <body class="buttons">
-        <form id="evaluation-form" method="POST" action="/run-code">
+<!-- Evaluation Button, text fields, audio input-->
+    <body class = "buttons">
+        <form id="evaluation-form" method="POST" action="/result" enctype="multipart/form-data">
             <div>
-                <label for="description">Describe your performance: What went well? What could be improved?
-                </label><br>
-                <input type="text" id="description" name="description" placeholder="Describe your performance..." required>
+                <label for="message">Describe your performance: What went well? What could be improved?</label><br>
+                <input type="text" id="message" name="message" placeholder="Describe your performance...">
             </div>
             <div>
-                <label for="audio_directory"><p></p>Audio Directory for file:</label><br>
-                <input type="text" id="audio_directory" name="audio_directory" placeholder="Type audio directory..." required>
+                <label for="audio_file">Audio file:</label><br>
+                <input type="file" id="audio_file" name="audio_file" accept=".wav,.mp3" required>
             </div>
             <button class="evaluate-button" type="submit" onclick="showLoading()">Evaluate!</button>
         </form>
