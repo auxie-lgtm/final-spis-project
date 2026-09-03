@@ -1,6 +1,6 @@
 import os
 import tempfile
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 from ai import PromptManager
 from karaoke_classifier import KaraokeClassifier
 

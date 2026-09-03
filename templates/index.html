@@ -47,29 +47,6 @@ What fun it is to ride and sing <br> A sleighing song tonight!</h4>
 
 <!-- scripting for buttons -->
         <script>
-            document.getElementById('evaluation-form').addEventListener('submit', function(event) {
-                event.preventDefault();
-
-                const formData = new FormData(this);
-
-                fetch('/run-code', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(async response => {
-                    const data = await response.json();
-                    if (!response.ok) {
-                        throw new Error(data.error || 'Request failed');
-                    }
-                    document.getElementById('resultDisplay').innerText = data.output;
-                })
-                .catch(error => {
-                    document.getElementById('resultDisplay').innerText = 'Error: ' + error.message;
-                    console.error('Error:', error);
-
-                });
-            });
-            
             showLoading = () => {
                 document.querySelector('.loading-gif').style.display = 'block';
                 document.querySelector('.loading-text').style.display = 'block';
