@@ -1,0 +1,15 @@
+Flask
+Gunicorn
+numpy
+scipy
+librosa
+soundfile
+matplotlib
+scikit-learn
+tensorflow-cpu
+torch
+torchaudio
+transformers
+demucs
+torchcrepe
+imageio-ffmpeg

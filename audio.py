@@ -29,17 +29,12 @@ from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 from demucs.apply import apply_model
 from demucs.pretrained import get_model
 import soundfile as sf
+import imageio_ffmpeg
 
 # handles file path management
-ffmpeg_dir = os.path.join(
-    os.path.dirname(__file__),
-    ".venv",
-    "Lib",
-    "site-packages",
-    "imageio_ffmpeg",
-    "binaries",
-)
-os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+os.environ["PATH"] = os.path.dirname(ffmpeg_path) + os.pathsep + os.environ["PATH"]
 
 class AudioProcessor:
     '''
