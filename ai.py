@@ -15,6 +15,7 @@ coaching feedback.
 
 from transformers import pipeline
 import torch
+import numpy as np
 import audio
 from karaoke_classifier import KaraokeClassifier
 
@@ -191,13 +192,18 @@ class PromptManager:
             "Note: approximate because there is no reference melody."
         )
 
-    def _combine_grades(self, dataset_grade, dataset_confidence, standalone_grade, standalone_confidence, audio_analysis=None):
+    def _combine_grades(self, dataset_grade, dataset_confidence, standalone_grade, standalone_confidence, audio_analysis=None, dataset_value=None, standalone_value=None):
         dataset_score = self._letter_to_score(dataset_grade)
         standalone_score = self._letter_to_score(standalone_grade)
 
+        if dataset_value is not None:
+            dataset_score = float(np.interp(dataset_value, [0.0, 0.5, 1.0, 2.0, 4.0, 7.0], [5.0, 4.0, 3.0, 2.0, 1.0, 0.0]))
+        if standalone_value is not None:
+            standalone_score = max(0.0, min(5.0, standalone_value / 20.0))
+
         # Give a little more weight to the standalone heuristic for new data, because the
         # dataset-trained model is only reliable within the project's training distribution.
-        dataset_weight = 0.45 if dataset_confidence > 0.5 else 0.2
+        dataset_weight = 0.45 if dataset_confidence > 0.5 else 0.25
         standalone_weight = 1.0 - dataset_weight
 
         blended_score = (dataset_score * dataset_weight) + (standalone_score * standalone_weight)
@@ -213,18 +219,10 @@ class PromptManager:
             has_transcript = 1.0 if transcript else 0.0
 
             audio_adjustment = 0.0
-            if voiced_percentage >= 70:
-                audio_adjustment += 0.25
-            elif voiced_percentage < 35:
+            if voiced_percentage < 35:
                 audio_adjustment -= 0.35
-
             if variation_hz > 90:
                 audio_adjustment -= 0.35
-            elif variation_hz < 35:
-                audio_adjustment += 0.15
-
-            if has_transcript:
-                audio_adjustment += 0.10
 
             blended_score += audio_adjustment
 
@@ -242,9 +240,11 @@ class PromptManager:
             metrics = self.audio_processor.evaluate_audio_metrics(audio_path)
 
             dataset_grade, dataset_confidence = self.classifier.estimate_standalone_grade(audio_path)
+            dataset_value = None
             if self.classifier.dataset_model is not None:
                 try:
                     dataset_grade, dataset_confidence = self.classifier.predict_grade(audio_path)
+                    dataset_value = self.classifier.predict_discrepancy(audio_path)
                 except Exception:
                     dataset_grade, dataset_confidence = self.classifier.estimate_standalone_grade(audio_path)
 
@@ -252,6 +252,7 @@ class PromptManager:
 
             standalone_grade, standalone_confidence = self.classifier.estimate_standalone_grade(audio_path)
             standalone_grade = self._normalize_grade(standalone_grade)
+            standalone_value = self.classifier.estimate_standalone_score(audio_path)
 
             overall_grade, blended_score = self._combine_grades(
                 dataset_grade,
@@ -259,6 +260,8 @@ class PromptManager:
                 standalone_grade,
                 standalone_confidence,
                 audio_analysis,
+                dataset_value,
+                standalone_value,
             )
         except Exception as exc:
             return f"Error occurred while processing audio: {exc}"

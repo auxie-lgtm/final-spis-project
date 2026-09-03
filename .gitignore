@@ -9,3 +9,5 @@
 /data/
 /old_generation.txt
 /tests/
+/sorter.py
+/wav.py
