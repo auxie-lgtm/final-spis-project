@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 from flask import Flask, jsonify, render_template, request
 from ai import PromptManager
 from karaoke_classifier import KaraokeClassifier
@@ -56,7 +57,7 @@ def render_result():
         return render_template('result.html', response=str(e), grade='F')
 
 if __name__ == '__main__':
-    ensure_dataset_model()
+    threading.Thread(target=ensure_dataset_model, daemon=True).start()
     app.run(
         host='0.0.0.0',
         port=int(os.environ.get('PORT', 5000)),
