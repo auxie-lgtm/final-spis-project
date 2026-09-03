@@ -28,6 +28,8 @@ Current Files:
 .
 - static directory - for css files
     - music-sheet.jpg - gives background
+    - sheet-music1.png - sample sheet music for karaoke
+    - treble-clef.gif - loading animation while AI classifies user performance
     - web_deco.css - gives style of website
 
 .
