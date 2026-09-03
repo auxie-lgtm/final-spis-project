@@ -3,38 +3,164 @@ body {
   min-height: 100vh;
 }
 
-.big_title {
-  font-size: 3em;
-  color: #000000; /* Black text */
-  text-align: center;
-  margin-top: 20px;
-  z-index: 2; /* Ensures it appears above the white square */
-  position: relative;
-}
+.title {
 
-.center {
-  display: flex;
-  justify-content: center;
-  font-family: Arial, Helvetica, sans-serif;
-  z-index: 2; /* Ensures it appears above the white square */
-  position: relative;
-  display: inline-block;
+  font-family: Avantgarde;
+  z-index: 2;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  
+  color: #875f45;
+  font-size: 64px;
   position: absolute;
-  top: 16.7%;
+  display: inline-block;
+  top: 12.5%;
   left: 50%;
   transform: translate(-50%, -50%);
 
 }
 
-.white-square {
+.names {
+
+  font-family: Avantgarde;
+  z-index: 2;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  
+  color: #875f45;
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  display: inline-block;
+  font-size: 1.5em;
+  transform: translate(-50%, -50%);
+}
+
+.center {
+
+  font-family: Avantgarde;
+  z-index: 2;
+
+  color: #000000;
+  display: inline-block;
+  position: absolute;
+  top: 37.5%;
+  left: 64%;
+  transform: translate(-50%, -50%);
+
+}
+
+.description {
+  
+  font-family: Avantgarde;
+  z-index: 2;
+
+  text-align: left;
+  color: #875f45; /* Black text */
+  font-size: 1.2em;
+  display: inline-block;
+  position: absolute;
+  top: 37.5%;
+  left: 32.5%;
+  transform: translate(-50%, -50%);
+}
+
+.music-title {
+  font-family: Avantgarde;
+  z-index: 2;
+  font-style: bold;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+
+
+  text-align: center;
+  color: #875f45;
+  font-size: 2.2em;
+  display: inline-block;
+  position: absolute;
+  top: 60%;
+  left: 62.5%;
+  transform: translate(-50%, -50%);
+}
+
+.music-desc {
+  font-family: Avantgarde;
+  z-index: 2;
+  font-style: italic;
+
+  text-align: center;
+  color: #875f45;
+  font-size: 1.2em;
+  display: inline-block;
+  position: absolute;
+  top: 80%;
+  left: 62.5%;
+  transform: translate(-50%, -50%);
+}
+
+.line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 2px; /* Thickness of the line */
+  background-color: #918151; /* Tan color for the line */
+  z-index: 2;
+}
+
+.tan-square {
   position: relative;
   display: inline-block;
-  background-color: #ffffff; /* White background */
+  background-color: #E0C9A6; /* Tan background */
   z-index: 1;
-  height: 100vh;           /* Takes up full viewport height */
+  height: 1000px;           /* Takes up full viewport height */
   width: 67%;  
   left: 17.067%;
   border-radius: 20px; 
   corner-shape: bevel;
   
+}
+
+.smaller-tan-square {
+  position: absolute;
+  display: inline-block;
+  background-color: #c99c7d; /* Tan background */
+  z-index: 2;
+  height: 200px;           /* Takes up full viewport height */
+  width: 500px;  
+  top: 26.7%;
+  left: 46.7%;
+  border-radius: 20px; 
+  corner-shape: bevel;
+  
+}
+
+.sheet-music {
+  position: absolute;
+  display: inline-block;
+  z-index: 2; /* Ensure it's above the white square */
+  top: 80%;
+  left: 32.5%;
+  transform: translate(-50%, -50%);
+  border-radius: 20px; 
+  corner-shape: bevel;
+}
+
+.loading-gif {
+  display: none; /* Initially hidden */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3; /* Ensure it's above the white square */
+}
+
+.loading-text {
+  display: none; /* Initially hidden */
+  position: absolute;
+  top: 70%; /* Adjust this value to position the text below the GIF */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: Avantgarde;
+  color: #000000;
+  font-size: 1.5em; /* Adjust size as needed */
+  z-index: 4; /* Ensure it's above the white square */
 }
