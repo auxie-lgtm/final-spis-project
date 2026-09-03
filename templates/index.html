@@ -1,33 +1,56 @@
 <!DOCTYPE html>
 <html>
+<!-- Title of website -->
     <head>
         <meta charset="UTF-8">
         <link rel="stylesheet" href="web_deco.css">
         <title class="center">Karaoke Feedback</title>
     </head>
 
-    <div class="white-square"> </div>
+<!-- Page content -->
+    <div class="tan-square"> </div>
+    <div class="smaller-tan-square"> </div>
+    <img class="loading-gif" src="treble-clef.gif" alt="Loading animation" width="300" height="300" class="center">
+    <img class="sheet-music" src="sheet-music1.png" alt="Sheet music not appearing, just sing whatever!" width="300" height="300" class="center">
+    <h3 class="loading-text">Loading...</h3>
+    <h4 class="music-desc">Dashing through the snow <br>
+In a one horse open sleigh <br> O'er the fields we go <br> Laughing all the way <br> Bells on bobtails ring <br> Making spirits bright <br>
+What fun it is to ride and sing <br> A sleighing song tonight!</h4>
+    <p class ="music-title">Song Example: Jingle Bells</p>
+
+        <h1 class="title">SINGING EVALUATOR</h1>
+        <h2 class="names" style="white-space: pre;">BRANDON AHN           -<>-          AUSTIN XIE</h2>
+        <h3 class="description">This is a simple karaoke feedback form. <br> By combining a Convolutional Neural Network <br> (CNN) with 
+        TinyLlama's Language Model, <br> the AIs collectivly evaluate the user's singing <br> performance, and reward it with a ranking
+        on <br> a letter grade basis: Rank S to Rank F.</h3>
 
     <div class="center">
-        <h1 class="big_title">Karaoke Feedback</h1>
+        
+        
+        
 
-    <body>
+<!-- Evaluation button and text fields -->
+    <body class="buttons">
         <form id="evaluation-form" method="POST" action="/run-code">
             <div>
-                <label for="description">Describe your performance:</label><br>
+                <label for="description">Describe your performance: What went well? What could be improved?
+                </label><br>
                 <input type="text" id="description" name="description" placeholder="Describe your performance..." required>
             </div>
             <div>
-                <label for="audio_directory">Audio path:</label><br>
+                <label for="audio_directory"><p></p>Audio Directory for file:</label><br>
                 <input type="text" id="audio_directory" name="audio_directory" placeholder="Type audio directory..." required>
             </div>
-            <button type="submit">Evaluate</button>
+            <button class="evaluate-button" type="submit" onclick="showLoading()">Evaluate!</button>
         </form>
 
         <div id="resultDisplay" style="margin-top: 20px;"></div>
     </div>
-        
+ 
+<!-- First Note Button -->
+ 
 
+<!-- scripting for buttons -->
         <script>
             document.getElementById('evaluation-form').addEventListener('submit', function(event) {
                 event.preventDefault();
@@ -52,8 +75,10 @@
                 });
             });
             
-            
-            
+            showLoading = () => {
+                document.querySelector('.loading-gif').style.display = 'block';
+                document.querySelector('.loading-text').style.display = 'block';
+            };
         </script>
     </body>
 </html>
