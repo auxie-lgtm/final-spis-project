@@ -305,7 +305,7 @@ class KaraokeClassifier(ClassIdentifier):
         voiced_ratio = profile["voiced_ratio"]
 
         score = 100.0
-        score -= min(20.0, pitch_std * 3.0)
+        score -= min(20.0, pitch_std * 1.5)
         # Semitone span is register-independent and is only a modest penalty because
         # a melody can legitimately cover a wide range.
         score -= min(8.0, pitch_range * 0.4)
@@ -334,7 +334,7 @@ class KaraokeClassifier(ClassIdentifier):
         if profile["note_count"] == 0:
             return 20.0
         score = 100.0
-        score -= min(20.0, profile["pitch_std_semitones"] * 3.0)
+        score -= min(20.0, profile["pitch_std_semitones"] * 1.5)
         score -= min(8.0, profile["pitch_range_semitones"] * 0.4)
         score -= max(0.0, (1.0 - profile["voiced_ratio"]) * 15.0)
         score -= min(20.0, max(0.0, (2.0 - profile["duration_seconds"]) * 10.0))
