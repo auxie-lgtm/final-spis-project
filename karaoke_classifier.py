@@ -15,7 +15,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 
 # File location for the saved trained model.
-MODEL_PATH = "singer_grade_model.keras"
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "singer_grade_model.keras")
 
 
 # Save the trained model to disk so it can be reused later without retraining.
@@ -57,7 +57,7 @@ class KaraokeClassifier(ClassIdentifier):
     # Initialize the classifier and optionally remove a stale model before loading.
     def __init__(self, force_retrain=False):
         super().__init__()
-        self.set_keywords(["_label.txt", ".mp3"])
+        self.set_keywords(["_label.txt", ".wav"])
         self.__audio_features = []
         self.__x = np.array(None)
         self.__y = np.array(None)
@@ -115,46 +115,40 @@ class KaraokeClassifier(ClassIdentifier):
     # Read a label file and compute an average discrepancy value.
     # These discrepancy values are the dataset's underlying signal for ranking quality.
     def find_avg_disc(self, filename):
-        # Grabbing the first and third columns (indexes 0 and 2)
-        column_1 = []
-        column_3 = []
         discrepancy = []
-
         with open(filename, "r") as file:
             for line in file:
-                # split() automatically handles spaces and tabs, while strip() removes whitespace at the ends
-                parts = line.strip().split()
-                
-                # Ensure the line isn't empty and has enough columns
-                if len(parts) > 3:
-                    column_1.append(parts[1])
-                    column_3.append(parts[3])
-                
-        for i in range(len(column_1)):
-            discrepancy.append(abs(round((float(column_1[i]) - float(column_3[i])), 2)))
-
+                parts = line.replace(",", " ").split()
+                if len(parts) <= 3:
+                    continue
+                try:
+                    recorded_pitch = float(parts[1])
+                    expected_pitch = float(parts[3])
+                except ValueError:
+                    continue
+                if not np.isfinite(recorded_pitch) or not np.isfinite(expected_pitch):
+                    continue
+                discrepancy.append(abs(round(recorded_pitch - expected_pitch, 2)))
+        if not discrepancy:
+            return None
         return self.calculate_weighted_avg(discrepancy)
 
     # Convert a raw audio file into a mel spectrogram feature suitable for CNN input.
     # This is the main input representation used by the trained model.
     def load_audio_feature(self, audio_path, sample_rate=16000, n_mels=128, frame_count=256):
-        waveform, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
-        mel_feature = librosa.feature.melspectrogram(
-            y=waveform,
-            sr=sample_rate,
-            n_fft=1024,
-            hop_length=512,
-            n_mels=n_mels,
-        )
-        mel_feature = librosa.power_to_db(mel_feature, ref=np.max)
-        mel_feature = librosa.util.fix_length(mel_feature, size=frame_count, axis=1)
-        mel_feature = np.clip((mel_feature + 80.0) / 80.0, 0.0, 1.0)
-        return mel_feature[..., np.newaxis].astype(np.float32)
+        profile = self.estimate_note_profile(audio_path, sample_rate=sample_rate)
+        return np.array([
+            min(1.0, profile["voiced_ratio"]),
+            min(1.0, profile["pitch_std_semitones"] / 4.0),
+            min(1.0, profile["pitch_range_semitones"] / 24.0),
+            min(1.0, profile["duration_seconds"] / 30.0),
+            min(1.0, profile["pitch_iqr_semitones"] / 12.0),
+            min(1.0, profile["pitch_motion_semitones"] / 2.0),
+            min(1.0, profile["pitch_confidence"]),
+            min(1.0, profile["mean_pitch_hz"] / 1000.0),
+        ], dtype=np.float32)
 
-    # Discover all labeled dataset samples and transform them into training data.
-    # Each sample directory is expected to contain:
-    # - a label file ending in _label.txt
-    # - an audio file ending in .mp3
+    # Discover all labeled dataset samples in their individual directories.
     def find_files(self):
         audio_features = []
         folders = []
@@ -162,34 +156,42 @@ class KaraokeClassifier(ClassIdentifier):
         for sample_directory in sorted(self.get_directory().iterdir()):
             if not sample_directory.is_dir():
                 continue
-            label_path = sample_directory / (f"{sample_directory.name}" + self.get_keywords()[0])
-            audio_path = sample_directory / (f"{sample_directory.name}" + self.get_keywords()[1])
-            if not audio_path.exists() or not label_path.exists():
+
+            label_path = sample_directory / f"{sample_directory.name}{self.get_keywords()[0]}"
+            audio_path = sample_directory / f"{sample_directory.name}{self.get_keywords()[1]}"
+            if not audio_path.exists():
+                audio_path = sample_directory / f"{sample_directory.name}.mp3"
+            if not audio_path.is_file():
                 continue
             average_discrepancy = self.find_avg_disc(label_path)
+            if average_discrepancy is None:
+                label_path.unlink()
+                audio_path.unlink()
+                print(f"Removed unusable sample: {audio_path.name}")
+                continue
             audio_features.append(self.load_audio_feature(audio_path))
             folders.append(str(label_path))
             avg_discs.append(average_discrepancy)
         self.set_audio_features(audio_features)
         self.set_folders(folders)
         self.set_avg_discs(avg_discs)
-        self.set_rank_eval(avg_discs)
         self.set_x(self.get_audio_features())
-        self.set_y(self.get_rank_eval())
+        self.set_y(avg_discs, dtype=np.float32)
 
     # Validate the dataset before training so the model is not fit on empty or malformed input.
     def check_valid_inputs(self):
         if len(self.get_x()) == 0:
             raise ValueError(f"No audio samples were found in {self.get_directory()}.")
         if len(np.unique(self.get_y())) < 2:
-            raise ValueError("At least two performance classes are required for a stratified split.")
+            raise ValueError("At least two distinct discrepancy values are required for regression.")
 
     # Estimate a basic note/pitch profile for a standalone audio file.
     # This provides a fallback when the file is not part of the training dataset and
     # we still want a rough evaluative signal.
     def estimate_note_profile(self, audio_path, sample_rate=16000):
         waveform, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
-        f0, voiced_flag, _ = librosa.pyin(
+        duration_seconds = len(waveform) / sample_rate
+        f0, voiced_flag, voiced_probability = librosa.pyin(
             waveform,
             fmin=librosa.note_to_hz("C2"),
             fmax=librosa.note_to_hz("C7"),
@@ -202,14 +204,38 @@ class KaraokeClassifier(ClassIdentifier):
                 "dominant_note": "unknown",
                 "mean_pitch_hz": 0.0,
                 "pitch_std_hz": 0.0,
+                "pitch_std_semitones": 0.0,
                 "pitch_range_hz": 0.0,
+                "pitch_range_semitones": 0.0,
+                "pitch_iqr_semitones": 0.0,
+                "pitch_motion_semitones": 0.0,
+                "pitch_confidence": 0.0,
                 "voiced_ratio": 0.0,
+                "duration_seconds": duration_seconds,
                 "note_count": 0,
                 "midi_notes": [],
             }
 
         pitch_values = f0[valid]
-        midi_values = np.rint(69 + 12 * np.log2(pitch_values / 440.0))
+        midi_pitch_values = 69 + 12 * np.log2(pitch_values / 440.0)
+        pitch_std_semitones = float(np.std(midi_pitch_values))
+        robust_pitch_range = float(
+            np.percentile(pitch_values, 90) - np.percentile(pitch_values, 10)
+        )
+        robust_semitone_range = float(
+            np.percentile(midi_pitch_values, 90)
+            - np.percentile(midi_pitch_values, 10)
+        )
+        pitch_iqr_semitones = float(
+            np.percentile(midi_pitch_values, 75)
+            - np.percentile(midi_pitch_values, 25)
+        )
+        pitch_motion_semitones = float(
+            np.median(np.abs(np.diff(midi_pitch_values)))
+            if len(midi_pitch_values) > 1 else 0.0
+        )
+        pitch_confidence = float(np.nanmean(voiced_probability))
+        midi_values = np.rint(midi_pitch_values)
         midi_values = midi_values[np.isfinite(midi_values)]
         counts = Counter(int(value) for value in midi_values)
         dominant_midi = counts.most_common(1)[0][0]
@@ -218,8 +244,14 @@ class KaraokeClassifier(ClassIdentifier):
             "dominant_note": librosa.midi_to_note(dominant_midi),
             "mean_pitch_hz": round(float(np.mean(pitch_values)), 2),
             "pitch_std_hz": round(float(np.std(pitch_values)), 2),
-            "pitch_range_hz": round(float(np.max(pitch_values) - np.min(pitch_values)), 2),
-            "voiced_ratio": round(float(np.mean(voiced_flag[valid])) if voiced_flag.size else 0.0, 2),
+            "pitch_std_semitones": round(pitch_std_semitones, 2),
+            "pitch_range_hz": round(robust_pitch_range, 2),
+            "pitch_range_semitones": round(robust_semitone_range, 2),
+            "pitch_iqr_semitones": round(pitch_iqr_semitones, 2),
+            "pitch_motion_semitones": round(pitch_motion_semitones, 2),
+            "pitch_confidence": round(pitch_confidence, 2),
+            "voiced_ratio": round(float(np.mean(valid)), 2),
+            "duration_seconds": duration_seconds,
             "note_count": len(counts),
             "midi_notes": [int(x) for x in midi_values],
         }
@@ -243,6 +275,20 @@ class KaraokeClassifier(ClassIdentifier):
             return "D"
         return "F"
 
+    @staticmethod
+    def discrepancy_to_grade(discrepancy):
+        if discrepancy < 0.5:
+            return "S"
+        if discrepancy < 1.0:
+            return "A"
+        if discrepancy < 2.0:
+            return "B"
+        if discrepancy < 4.0:
+            return "C"
+        if discrepancy < 7.0:
+            return "D"
+        return "F"
+
     # Heuristic fallback for arbitrary user files.
     # This does not claim exact pitch accuracy; it only offers a rough estimate based on
     # pitch variance, range, and voiced coverage.
@@ -254,27 +300,28 @@ class KaraokeClassifier(ClassIdentifier):
             # are not penalized as aggressively as a truly poor singing performance.
             return "D", 0.18
 
-        pitch_std = profile["pitch_std_hz"]
-        pitch_range = profile["pitch_range_hz"]
+        pitch_std = profile["pitch_std_semitones"]
+        pitch_range = profile["pitch_range_semitones"]
         voiced_ratio = profile["voiced_ratio"]
-        note_count = profile["note_count"]
 
         score = 100.0
-        score -= min(30.0, pitch_std / 6.0)
-        score -= min(25.0, pitch_range / 35.0)
-        score -= max(0.0, (1.0 - voiced_ratio) * 25.0)
-        score += min(15.0, note_count * 1.5)
+        score -= min(20.0, pitch_std * 1.5)
+        # Semitone span is register-independent and is only a modest penalty because
+        # a melody can legitimately cover a wide range.
+        score -= min(8.0, pitch_range * 0.4)
+        score -= max(0.0, (1.0 - voiced_ratio) * 15.0)
+        score -= min(20.0, max(0.0, (2.0 - profile["duration_seconds"]) * 10.0))
         score = max(0.0, min(100.0, score))
 
-        if score >= 90:
+        if score >= 95:
             grade = "S"
-        elif score >= 80:
+        elif score >= 84:
             grade = "A"
-        elif score >= 70:
+        elif score >= 72:
             grade = "B"
-        elif score >= 60:
+        elif score >= 58:
             grade = "C"
-        elif score >= 30:
+        elif score >= 42:
             grade = "D"
         else:
             grade = "F"
@@ -282,11 +329,23 @@ class KaraokeClassifier(ClassIdentifier):
         confidence = max(0.25, min(0.8, score / 100.0))
         return grade, confidence
 
+    def estimate_standalone_score(self, audio_path):
+        profile = self.estimate_note_profile(audio_path)
+        if profile["note_count"] == 0:
+            return 20.0
+        score = 100.0
+        score -= min(20.0, profile["pitch_std_semitones"] * 1.5)
+        score -= min(8.0, profile["pitch_range_semitones"] * 0.4)
+        score -= max(0.0, (1.0 - profile["voiced_ratio"]) * 15.0)
+        score -= min(20.0, max(0.0, (2.0 - profile["duration_seconds"]) * 10.0))
+        return max(0.0, min(100.0, score))
+
     # Public inference method used by the rest of the app.
     # The trained CNN is tried first if available, then the heuristic fallback is used.
     def predict_grade(self, audio_path):
         # 1. Try the trained dataset CNN first.
         try:
+            audio_duration = librosa.get_duration(path=audio_path)
             feature = self.load_audio_feature(audio_path)
             feature = np.expand_dims(feature, axis=0)
         except Exception:
@@ -296,15 +355,25 @@ class KaraokeClassifier(ClassIdentifier):
             return self.estimate_standalone_grade(audio_path)
 
         try:
-            probabilities = self.dataset_model.predict(feature, verbose=0)[0]
-            class_index = int(np.argmax(probabilities))
-            raw_grade = self.rankings[class_index]
-            grade = self.coarsen_grade(raw_grade)
-            confidence = float(probabilities[class_index])
+            predicted_log_discrepancy = float(self.dataset_model.predict(feature, verbose=0)[0][0])
+            if not np.isfinite(predicted_log_discrepancy):
+                return self.estimate_standalone_grade(audio_path)
+            predicted_discrepancy = max(0.0, float(np.expm1(predicted_log_discrepancy)))
+            grade = self.discrepancy_to_grade(predicted_discrepancy)
+            confidence = max(0.25, min(0.8, 1.0 / (1.0 + predicted_discrepancy)))
             return grade, confidence
         except Exception:
             # 2. If the dataset model fails, fall back to the standalone heuristic.
             return self.estimate_standalone_grade(audio_path)
+
+    def predict_discrepancy(self, audio_path):
+        if self.dataset_model is None:
+            return None
+        feature = np.expand_dims(self.load_audio_feature(audio_path), axis=0)
+        value = float(self.dataset_model.predict(feature, verbose=0)[0][0])
+        if not np.isfinite(value):
+            return None
+        return max(0.0, float(np.expm1(value)))
 
 
     # Train the CNN on the labeled dataset.
@@ -317,17 +386,12 @@ class KaraokeClassifier(ClassIdentifier):
             print(e)
             return
 
-        y_numeric = np.asarray(self.get_y(), dtype=np.int64)
-        class_counts = np.bincount(y_numeric)
-
-        if np.min(class_counts[class_counts > 0]) < 2:
-            print("Warning: some classes have fewer than 2 samples; using a non-stratified split.")
-            x_train, x_temp, y_train, y_temp = train_test_split(self.get_x(), self.get_y(), test_size=0.4, random_state=42)
-            x_val, x_test, y_val, y_test = train_test_split(x_temp, y_temp, test_size=0.5, random_state=42)
-        else:
-            # split data into training, validation, and test sets
-            x_train, x_temp, y_train, y_temp = train_test_split(self.get_x(), self.get_y(), test_size=0.4, random_state=42, stratify=self.get_y())
-            x_val, x_test, y_val, y_test = train_test_split(x_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+        x_train, x_temp, y_train, y_temp = train_test_split(
+            self.get_x(), self.get_y(), test_size=0.4, random_state=42
+        )
+        x_val, x_test, y_val, y_test = train_test_split(
+            x_temp, y_temp, test_size=0.5, random_state=42
+        )
 
         print(f"\nTraining size: {len(x_train)}, Validation size: {len(x_val)}, Test size: {len(x_test)}")
 
@@ -336,59 +400,44 @@ class KaraokeClassifier(ClassIdentifier):
         y_val = np.array(y_val).reshape((y_val.shape[0], ))
         y_test = np.array(y_test).reshape((y_test.shape[0], ))
 
-        class_count = len(self.rankings)
+        y_train_log = np.log1p(y_train)
+        y_val_log = np.log1p(y_val)
 
-        # convert labels to one-hot encoding
-        y_train_oh = tf.keras.utils.to_categorical(y_train, class_count)
-        y_val_oh = tf.keras.utils.to_categorical(y_val, class_count)
-        y_test_oh = tf.keras.utils.to_categorical(y_test, class_count)
-
-        # Define a simpler CNN to reduce memorization on limited data.
+        # Regress directly on average pitch discrepancy instead of artificial classes.
+        # Log targets reduce the influence of a small number of very large errors.
         model = Sequential()
-        model.add(Input(shape=(128, 256, 1)))
-        model.add(Conv2D(16, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
-        model.add(MaxPooling2D((2, 2)))
-        model.add(Dropout(0.2))
-
-        model.add(Conv2D(32, (3, 3), activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
-        model.add(MaxPooling2D((2, 2)))
-        model.add(Dropout(0.2))
-
-        model.add(Flatten())
+        model.add(Input(shape=(8,)))
+        model.add(Dense(64, activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
         model.add(Dense(32, activation='relu', kernel_regularizer=regularizers.l2(1e-4)))
-        model.add(Dropout(0.4))
-        model.add(Dense(class_count, activation='softmax'))
+        model.add(Dense(1, activation='linear'))
         model.summary()
 
         # Compile the model
-        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        model.compile(optimizer='adam', loss=tf.keras.losses.Huber(), metrics=['mae'])
 
         early_stop = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=3,
+            patience=5,
             restore_best_weights=True,
         )
 
         # Train the model with early stopping to prevent overfitting.
         history = model.fit(
             x_train,
-            y_train_oh,
-            epochs=20,
-            batch_size=16,
-            validation_data=(x_val, y_val_oh),
+            y_train_log,
+            epochs=40,
+            batch_size=32,
+            validation_data=(x_val, y_val_log),
             callbacks=[early_stop],
         )
         print("Training history keys:", list(history.history.keys()))
         self.dataset_model = model
         save_model(model)
 
-        # Evaluate the trained model on the holdout test set.
-        y_pred = model.predict(x_test)
-        y_pred = tf.argmax(y_pred, axis=1)
-
-        loss, acc = model.evaluate(x_test, y_test_oh)
-        print("Test accuracy:", acc)
-        print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
+        # Evaluate regression error on the holdout test set.
+        predicted_test = np.maximum(0.0, np.expm1(model.predict(x_test, verbose=0).reshape(-1)))
+        test_mae = float(np.mean(np.abs(predicted_test - y_test)))
+        print("Test mean absolute error:", test_mae)
         return model
 
 # Script entry point for explicit training runs only.

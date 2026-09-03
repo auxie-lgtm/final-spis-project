@@ -43,25 +43,27 @@ class ClassIdentifier:
         return self.__rank_eval
 
     def set_rank_eval(self, avg_discs):
-        # Use a wider, more even scale to spread labels across all six bands.
-        # The goal is not to be mathematically perfect; it is to ensure the model sees
-        # all classes and does not collapse into just a few dominant bins.
-        thresholds = [0.5, 1.0, 2.0, 4.0, 7.0]
-        eval = []
-        for discrepancy in avg_discs:
-            if discrepancy < thresholds[0]:
-                grade = "S"
-            elif discrepancy < thresholds[1]:
-                grade = "A"
-            elif discrepancy < thresholds[2]:
-                grade = "B"
-            elif discrepancy < thresholds[3]:
-                grade = "C"
-            elif discrepancy < thresholds[4]:
-                grade = "D"
-            else:
-                grade = "F"
-            eval.append(grade)
+        # Use relative bands so the CNN receives a balanced target distribution
+        # when the dataset's absolute discrepancy range is uneven.
+        if not avg_discs:
+            self.__rank_eval = []
+            return
+        groups = []
+        for discrepancy in sorted(set(avg_discs)):
+            groups.append((discrepancy, avg_discs.count(discrepancy)))
+
+        grade_by_disc = {}
+        grades = self.rankings
+        samples_seen = 0
+        for discrepancy, group_size in groups:
+            grade_index = min(
+                len(grades) - 1,
+                samples_seen * len(grades) // len(avg_discs),
+            )
+            grade_by_disc[discrepancy] = grades[grade_index]
+            samples_seen += group_size
+
+        eval = [grade_by_disc[discrepancy] for discrepancy in avg_discs]
         self.__rank_eval = eval
 
     @abc.abstractmethod
